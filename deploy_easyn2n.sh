@@ -1,39 +1,117 @@
 #!/bin/bash
 
-# 询问节点位置
-read -p "节点是否在中国大陆？(y/n): " in_china
-
-# 设置下载代理
-if [[ "$in_china" =~ ^[Yy]$ ]]; then
-    proxy="https://ghproxy.com/"
-else
-    proxy=""
-fi
-
-# 检测系统类型
+# 检测操作系统类型
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
-elif type lsb_release >/dev/null 2>&1; then
-    OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
 else
-    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    echo "无法确定操作系统类型"
+    exit 1
 fi
 
-# 设置安装目录
-read -p "请输入easyn2n服务端目录（默认/opt）: " install_dir
-install_dir=${install_dir:-/opt}
+# 询问是否在中国大陆
+read -p "节点是否在中国大陆？(y/n): " IN_CHINA
+IN_CHINA=$(echo "$IN_CHINA" | tr '[:upper:]' '[:lower:]')
 
-# 创建目录并进入
-sudo mkdir -p "$install_dir"
-cd "$install_dir" || exit 1
+# 设置下载基础URL
+if [[ "$IN_CHINA" == "y" || "$IN_CHINA" == "yes" ]]; then
+    BASE_URL="https://gh.api.99988866.xyz/https://github.com"
+else
+    BASE_URL="https://github.com"
+fi
 
-# 安装n2n主程序
-if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
-    pkg_name="n2n_3.1.1_amd64.deb"
-    download_url="${proxy}https://github.com/ntop/n2n/releases/download/3.1.1/n2n_3.1.1_amd64.deb"
-    wget "$download_url" -O "$pkg_name"
-    sudo dpkg -i "$pkg_name"
+# 安装n2n二进制包
+install_n2n() {
+    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+        PKG_NAME="n2n_3.1.1_amd64.deb"
+        DOWNLOAD_URL="$BASE_URL/ntop/n2n/releases/download/3.1.1/$PKG_NAME"
+        wget "$DOWNLOAD_URL"
+        sudo dpkg -i "$PKG_NAME"
+        rm -f "$PKG_NAME"
+    elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
+        PKG_NAME="n2n-3.1.1-1.x86_64.rpm"
+        DOWNLOAD_URL="$BASE_URL/ntop/n2n/releases/download/3.1.1/$PKG_NAME"
+        wget "$DOWNLOAD_URL"
+        sudo rpm -ivh "$PKG_NAME"
+        rm -f "$PKG_NAME"
+    else
+        echo "不支持的操作系统: $OS"
+        exit 1
+    fi
+}
+
+# 安装编译依赖
+install_dependencies() {
+    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+        sudo apt-get update
+        sudo apt-get install autoconf make gcc -y
+    elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
+        sudo yum install autoconf make gcc -y
+    fi
+}
+
+# 主程序
+main() {
+    # 安装n2n
+    install_n2n
+    
+    # 安装依赖
+    install_dependencies
+    
+    # 设置目录
+    read -p "请输入EasyN2N服务端目录 (默认: /opt): " SERVER_DIR
+    SERVER_DIR=${SERVER_DIR:-/opt}
+    
+    # 创建目录并进入
+    sudo mkdir -p "$SERVER_DIR"
+    cd "$SERVER_DIR" || exit
+    
+    # 下载并编译源码
+    SOURCE_URL="$BASE_URL/ntop/n2n/archive/refs/tags/3.0.tar.gz"
+    sudo wget "$SOURCE_URL"
+    sudo tar xzvf 3.0.tar.gz
+    cd n2n-3.0 || exit
+    
+    sudo ./autogen.sh
+    sudo ./configure
+    sudo make && sudo make install
+    
+    # 设置端口
+    read -p "请输入运行端口: " PORT
+    
+    # 配置防火墙
+    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+        sudo ufw allow "$PORT"/udp
+    elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
+        sudo firewall-cmd --permanent --add-port="$PORT"/udp
+        sudo firewall-cmd --reload
+    fi
+    
+    # 启动服务
+    sudo supernode -p "$PORT" > /dev/null 2>&1 &
+    SUPERNODE_PID=$!
+    
+    # 获取本机IP
+    IP_ADDR=$(hostname -I | awk '{print $1}')
+    
+    # 输出结果
+    echo ""
+    echo "========================================"
+    echo "  EasyN2N 服务端已成功启动！"
+    echo "----------------------------------------"
+    echo "  PID: $SUPERNODE_PID"
+    echo "  监听端口: $PORT/udp"
+    echo "  连接地址: $IP_ADDR:$PORT"
+    echo "========================================"
+    echo ""
+    echo "关闭程序方法:"
+    echo "1. 查找进程: ps -ef | grep supernode"
+    echo "2. 终止进程: sudo kill <PID>"
+    echo ""
+}
+
+# 执行主程序
+main
     sudo apt-get update
     sudo apt-get install -y autoconf make gcc
 elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
