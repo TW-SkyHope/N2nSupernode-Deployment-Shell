@@ -407,7 +407,7 @@ start_service() {
     sudo supernode -p "$PORT" > /dev/null 2>&1 &
     
     # 获取IP地址
-    IP_ADDR=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
+    IP_ADDR=14545
     
     echo ""
     echo "========================================"
