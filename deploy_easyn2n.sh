@@ -219,198 +219,213 @@ start_supernode() {
     if ps -p $pid > /dev/null 2>&1; then
         log_success "supernode 启动成功 (PID: $pid)"
         echo "=================================================="
-        log_succes        OS_VERSION=$VERSION_ID
+        log_success "EasyN2N 部署完成！"
+        log_success "连接地址: $ip:$port"
+        log_success "Supernode PID: $pid"
+        echo "=================================================="
+        
+        # 保存PID到文件以便后续管理
+        echo $pid > /tmp/easyn2n_supernode.pid
+        log_info "PID已保存到 /tmp/easyn2n_supernode.pid"
     else
-        log_error "无法检测操作系统类型"
+        log_error "supernode 启动失败"
         exit 1
     fi
+}
 
-    case $OS in
-        ubuntu|debian)
-            OS_TYPE="debian"
-            log_info "检测到 Debian/Ubuntu 系统"
+# 停止supernode
+stop_supernode() {
+    log_info "停止 supernode 服务..."
+    
+    # 方法1: 使用保存的PID文件
+    if [ -f /tmp/easyn2n_supernode.pid ]; then
+        local pid=$(cat /tmp/easyn2n_supernode.pid)
+        if ps -p $pid > /dev/null 2>&1; then
+            sudo kill $pid
+            log_success "已停止进程 (PID: $pid)"
+            rm -f /tmp/easyn2n_supernode.pid
+            return 0
+        fi
+    fi
+    
+    # 方法2: 查找并杀死所有supernode进程
+    local pids=$(pgrep -x "supernode" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        echo "$pids" | sudo xargs kill
+        log_success "已停止所有supernode进程"
+        rm -f /tmp/easyn2n_supernode.pid
+    else
+        log_warning "未找到运行的supernode进程"
+    fi
+}
+
+# 显示状态
+show_status() {
+    log_info "检查 supernode 状态..."
+    
+    if [ -f /tmp/easyn2n_supernode.pid ]; then
+        local pid=$(cat /tmp/easyn2n_supernode.pid)
+        if ps -p $pid > /dev/null 2>&1; then
+            log_success "supernode 正在运行 (PID: $pid)"
+            local port=$(sudo netstat -tulpn 2>/dev/null | grep "$pid/supernode" | grep udp | awk '{print $4}' | cut -d: -f2)
+            if [ -n "$port" ]; then
+                local ip=$(get_ip_address)
+                log_success "监听端口: $port"
+                log_success "连接地址: $ip:$port"
+            fi
+            return 0
+        else
+            rm -f /tmp/easyn2n_supernode.pid
+        fi
+    fi
+    
+    local pids=$(pgrep -x "supernode" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        log_success "supernode 正在运行 (PIDs: $pids)"
+        # 显示端口信息
+        sudo netstat -tulpn 2>/dev/null | grep supernode | grep udp || true
+    else
+        log_warning "supernode 未运行"
+    fi
+}
+
+# 主部署函数
+deploy_easyn2n() {
+    log_info "开始部署 EasyN2N 节点..."
+    
+    # 检测操作系统
+    detect_os
+    
+    # 询问是否在中国大陆
+    read -p "节点是否在中国大陆？[y/N]: " in_china
+    case $in_china in
+        [Yy]* )
+            GITHUB_URL="https://hub.yzuu.cf/ntop/n2n/archive/refs/tags/3.1.1.tar.gz"
+            log_info "使用 GitHub 镜像站"
             ;;
-        rhel|centos|fedora|rocky|almalinux)
-            OS_TYPE="rhel"
-            log_info "检测到 RHEL 架构系统"
-            ;;
-        *)
-            log_error "不支持的操作系统: $OS"
-            exit 1
+        * )
+            GITHUB_URL="https://github.com/ntop/n2n/archive/refs/tags/3.1.1.tar.gz"
+            log_info "使用 GitHub 官方源"
             ;;
     esac
-}
-
-# 询问是否在中国大陆
-ask_china_region() {
-    while true; do
-        read -p "节点是否在中国大陆？(y/n): " is_china
-        case $is_china in
-            [Yy]* )
-                GITHUB_URL="https://hub.yzuu.cf"
-                log_info "使用 GitHub 镜像站: $GITHUB_URL"
-                break
-                ;;
-            [Nn]* )
-                GITHUB_URL="https://github.com"
-                log_info "使用 GitHub 原站: $GITHUB_URL"
-                break
-                ;;
-            * ) echo "请输入 y 或 n";;
-        esac
-    done
-}
-
-# 询问安装目录
-ask_install_dir() {
-    read -p "设置 EasyN2N 服务端目录 (默认为 /opt): " install_dir
-    install_dir=${install_dir:-/opt}
-    log_info "安装目录: $install_dir"
-}
-
-# 询问运行端口
-ask_port() {
-    while true; do
-        read -p "设置 EasyN2N 运行端口 (默认为 7654): " port
-        port=${port:-7654}
-        
-        # 检查端口是否合法
-        if [[ $port =~ ^[0-9]+$ ]] && [ $port -ge 1 ] && [ $port -le 65535 ]; then
-            log_info "运行端口: $port"
-            break
-        else
-            log_error "端口号必须为 1-65535 之间的数字"
-        fi
-    done
-}
-
-# 安装依赖 (Ubuntu/Debian)
-install_dependencies_debian() {
-    log_info "安装系统依赖..."
-    sudo apt-get update
-    sudo apt-get install -y autoconf make gcc wget
-}
-
-# 安装依赖 (RHEL/CentOS/Fedora)
-install_dependencies_rhel() {
-    log_info "安装系统依赖..."
     
-    # 检查包管理器
-    if command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y autoconf make gcc wget
-    elif command -v yum >/dev/null 2>&1; then
-        sudo yum install -y autoconf make gcc wget
-    else
-        log_error "未找到可用的包管理器 (dnf/yum)"
-        exit 1
-    fi
-}
-
-# 安装 N2N 包 (Ubuntu/Debian)
-install_n2n_package_debian() {
-    log_info "下载并安装 N2N 包..."
-    cd /tmp
-    wget "${GITHUB_URL}/ntop/n2n/releases/download/3.1.1/n2n_3.1.1_amd64.deb"
-    sudo dpkg -i n2n_3.1.1_amd64.deb || {
-        log_warning "安装过程中可能存在依赖问题，尝试修复..."
-        sudo apt-get install -f -y
-    }
-}
-
-# 安装 N2N 包 (RHEL/CentOS/Fedora)
-install_n2n_package_rhel() {
-    log_info "下载并安装 N2N 包..."
-    cd /tmp
-    wget "${GITHUB_URL}/ntop/n2n/releases/download/3.1.1/n2n-3.1.1-1.x86_64.rpm"
-    
-    if command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y ./n2n-3.1.1-1.x86_64.rpm
-    else
-        sudo yum install -y ./n2n-3.1.1-1.x86_64.rpm
-    fi
-}
-
-# 编译安装 EasyN2N
-compile_easyn2n() {
-    log_info "编译安装 EasyN2N..."
+    # 询问安装路径
+    read -p "请输入安装路径 [默认: /home]: " install_path
+    install_path=${install_path:-/home}
     
     # 创建安装目录
-    sudo mkdir -p "$install_dir"
-    cd "$install_dir"
+    mkdir -p "$install_path"
+    
+    # 询问运行端口
+    read -p "请输入 supernode 运行端口 [默认: 7654]: " run_port
+    run_port=${run_port:-7654}
+    
+    # 验证端口号
+    if ! [[ $run_port =~ ^[0-9]+$ ]] || [ $run_port -lt 1 ] || [ $run_port -gt 65535 ]; then
+        log_error "无效的端口号: $run_port"
+        exit 1
+    fi
+    
+    log_info "安装路径: $install_path"
+    log_info "运行端口: $run_port"
+    
+    # 安装依赖
+    install_dependencies
     
     # 下载源码
-    sudo wget "${GITHUB_URL}/ntop/n2n/archive/refs/tags/3.0.tar.gz"
-    sudo tar xzvf 3.0.tar.gz
-    cd n2n-3.0
+    download_n2n "$install_path" "$GITHUB_URL"
     
     # 编译安装
-    sudo ./autogen.sh
-    sudo ./configure
-    sudo make && sudo make install
+    compile_install "$install_path"
+    
+    # 配置防火墙
+    configure_firewall "$run_port"
+    
+    # 启动服务
+    start_supernode "$run_port"
 }
 
-# 配置防火墙
-configure_firewall() {
-    log_info "配置防火墙..."
-    
-    case $OS_TYPE in
-        debian)
-            if command -v ufw >/dev/null 2>&1; then
-                sudo ufw allow "$port/udp"
-                log_success "UFW 防火墙已配置"
-            else
-                log_warning "未找到 ufw，请手动配置防火墙规则"
-            fi
+# 显示使用说明
+show_usage() {
+    echo "EasyN2N 部署管理脚本"
+    echo ""
+    echo "用法: $0 [命令]"
+    echo ""
+    echo "命令:"
+    echo "  deploy    部署 EasyN2N 节点"
+    echo "  start     启动 supernode 服务"
+    echo "  stop      停止 supernode 服务"
+    echo "  status    查看服务状态"
+    echo "  restart   重启服务"
+    echo "  help      显示此帮助信息"
+    echo ""
+    echo "示例:"
+    echo "  $0 deploy    # 部署节点"
+    echo "  $0 status    # 查看状态"
+}
+
+# 主程序
+main() {
+    case $1 in
+        "deploy")
+            deploy_easyn2n
             ;;
-        rhel)
-            if command -v firewall-cmd >/dev/null 2>&1; then
-                sudo firewall-cmd --permanent --add-port="$port/udp"
-                sudo firewall-cmd --reload
-                log_success "FirewallD 已配置"
+        "start")
+            if [ -z "$2" ]; then
+                log_error "请指定端口号，例如: $0 start 7654"
+                exit 1
+            fi
+            start_supernode "$2"
+            ;;
+        "stop")
+            stop_supernode
+            ;;
+        "status")
+            show_status
+            ;;
+        "restart")
+            if [ -z "$2" ]; then
+                log_error "请指定端口号，例如: $0 restart 7654"
+                exit 1
+            fi
+            stop_supernode
+            sleep 2
+            start_supernode "$2"
+            ;;
+        "help"|"-h"|"--help")
+            show_usage
+            ;;
+        *)
+            if [ $# -eq 0 ]; then
+                show_usage
+                echo ""
+                read -p "是否开始部署？[Y/n]: " choice
+                case $choice in
+                    [Nn]* )
+                        exit 0
+                        ;;
+                    * )
+                        deploy_easyn2n
+                        ;;
+                esac
             else
-                log_warning "未找到 firewall-cmd，请手动配置防火墙规则"
+                log_error "未知命令: $1"
+                show_usage
+                exit 1
             fi
             ;;
     esac
 }
 
-# 获取本机IP地址
-get_ip_address() {
-    # 尝试多种方法获取IP
-    local ip
-    ip=$(hostname -I | awk '{print $1}' 2>/dev/null) || 
-    ip=$(ip route get 1 | awk '{print $7; exit}' 2>/dev/null) ||
-    ip=$(curl -s ifconfig.me 2>/dev/null) ||
-    ip="无法获取"
-    
-    echo "$ip"
-}
+# 检查是否以root权限运行
+if [ "$EUID" -eq 0 ]; then
+    log_warning "不建议直接以root用户运行此脚本"
+    read -p "是否继续？[y/N]: " root_continue
+    case $root_continue in
+        [Yy]* ) ;;
+        * ) exit 1 ;;
+    esac
+fi
 
-# 启动 supernode 服务
-start_supernode() {
-    log_info "启动 supernode 服务..."
-    
-    # 获取IP地址
-    local ip_address
-    ip_address=$(get_ip_address)
-    
-    # 创建 systemd 服务文件
-    local service_file="/etc/systemd/system/supernode.service"
-    
-    sudo tee "$service_file" > /dev/null <<EOF
-[Unit]
-Description=N2N Supernode
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/sbin/supernode -p $port
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # 重新加载 systemd 并启动服务
-    sudo systemc
+# 运行主程序
+main "$@"
