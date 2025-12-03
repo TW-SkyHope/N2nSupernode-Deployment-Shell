@@ -122,7 +122,6 @@ download_n2n() {
         if [ $? -ne 0 ]; then
             log_error "下载失败，请检查网络连接"
             exit 1
-        fi
     fi
     
     # 解压源码
