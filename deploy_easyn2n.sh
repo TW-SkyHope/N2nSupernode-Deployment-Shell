@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # EasyN2N 部署管理脚本
-# 修复版本 - 解决语法错误问题
+# 修复版 - 支持 Ubuntu/Debian 和 RHEL/CentOS/Fedora 系统
 
 # 颜色定义
 RED='\033[0;31m'
@@ -35,6 +35,183 @@ detect_os() {
 }
 
 # 检查命令是否存在
+check_command() {
+    if ! command -v "$1" &> /dev/null; then
+        return 1
+    fi
+    return 0
+}
+
+# 询问是否在中国大陆
+ask_location() {
+    read -p "节点是否在中国大陆？(y/n): " is_china
+    case $is_china in
+        [Yy]* )
+            GITHUB_MIRROR="https://ghproxy.com/"
+            log_info "使用GitHub镜像站"
+            ;;
+        [Nn]* )
+            GITHUB_MIRROR=""
+            log_info "使用原始GitHub链接"
+            ;;
+        * )
+            log_warn "输入无效，默认使用原始GitHub链接"
+            GITHUB_MIRROR=""
+            ;;
+    esac
+}
+
+# 安装依赖和n2n包
+install_dependencies() {
+    local os_type=$1
+    
+    log_info "开始安装依赖..."
+    
+    if [ "$os_type" = "debian" ]; then
+        # Debian/Ubuntu 系统
+        if ! check_command wget; then
+            apt-get update && apt-get install -y wget
+        fi
+        
+        apt-get update
+        apt-get install -y autoconf make gcc
+        
+        # 下载并安装n2n包
+        log_info "下载n2n安装包..."
+        wget "${GITHUB_MIRROR}https://github.com/ntop/n2n/releases/download/3.1.1/n2n_3.1.1_amd64.deb"
+        dpkg -i n2n_3.1.1_amd64.deb
+        
+    elif [ "$os_type" = "rhel" ]; then
+        # RHEL/CentOS/Fedora 系统
+        if ! check_command wget; then
+            yum install -y wget
+        fi
+        
+        # 安装开发工具
+        if command -v dnf &> /dev/null; then
+            dnf groupinstall -y "Development Tools"
+            dnf install -y autoconf make gcc
+        else
+            yum groupinstall -y "Development Tools"
+            yum install -y autoconf make gcc
+        fi
+        
+        # 下载并安装n2n包
+        log_info "下载n2n安装包..."
+        wget "${GITHUB_MIRROR}https://github.com/ntop/n2n/releases/download/3.1.1/n2n-3.1.1-1.x86_64.rpm"
+        rpm -i n2n-3.1.1-1.x86_64.rpm
+    fi
+}
+
+# 编译安装n2n源码
+compile_n2n() {
+    local install_dir=$1
+    
+    log_info "设置easyn2n服务端目录: $install_dir"
+    cd "$install_dir" || exit 1
+    
+    log_info "下载并编译n2n源码..."
+    wget "${GITHUB_MIRROR}https://github.com/ntop/n2n/archive/refs/tags/3.0.tar.gz"
+    tar xzvf 3.0.tar.gz
+    cd n2n-3.0 || exit 1
+    
+    log_info "开始编译安装..."
+    ./autogen.sh
+    ./configure
+    make && make install
+    
+    log_info "n2n编译安装完成"
+}
+
+# 配置防火墙
+configure_firewall() {
+    local port=$1
+    local os_type=$2
+    
+    log_info "配置防火墙，开放端口 $port/udp"
+    
+    if [ "$os_type" = "debian" ]; then
+        # Debian/Ubuntu 使用ufw
+        if check_command ufw; then
+            ufw allow "$port/udp"
+            ufw --force enable
+        else
+            log_warn "ufw未安装，跳过防火墙配置"
+        fi
+    elif [ "$os_type" = "rhel" ]; then
+        # RHEL/CentOS 使用firewalld
+        if systemctl is-active --quiet firewalld; then
+            firewall-cmd --permanent --add-port="$port/udp"
+            firewall-cmd --reload
+        else
+            # 使用iptables
+            iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+            # 保存iptables规则
+            if command -v iptables-save &> /dev/null; then
+                iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+            fi
+        fi
+    fi
+}
+
+# 启动supernode服务
+start_supernode() {
+    local port=$1
+    
+    log_info "启动supernode服务，端口: $port"
+    
+    # 检查是否已有supernode进程在运行
+    if pgrep supernode > /dev/null; then
+        log_warn "检测到已有supernode进程在运行，先停止..."
+        pkill supernode
+        sleep 2
+    fi
+    
+    # 启动supernode
+    supernode -p "$port" &
+    local pid=$!
+    
+    sleep 3
+    
+    # 检查是否启动成功
+    if ps -p "$pid" > /dev/null; then
+        local ip_addr
+        ip_addr=$(hostname -I | awk '{print $1}')
+        log_info "════════════════════════════════════════"
+        log_info "🎉 EasyN2N 启动成功！"
+        log_info "📡 连接地址: $ip_addr:$port"
+        log_info "📊 进程PID: $pid"
+        log_info "════════════════════════════════════════"
+    else
+        log_error "supernode启动失败，请检查日志"
+        return 1
+    fi
+}
+
+# 停止supernode服务
+stop_supernode() {
+    log_info "停止supernode服务..."
+    
+    if pgrep supernode > /dev/null; then
+        pkill supernode
+        log_info "supernode已停止"
+    else
+        log_warn "没有找到运行的supernode进程"
+    fi
+}
+
+# 显示运行状态
+show_status() {
+    log_info "当前supernode进程状态:"
+    ps -ef | grep supernode | grep -v grep
+    
+    if pgrep supernode > /dev/null; then
+        local pid
+        pid=$(pgrep supernode)
+        local port
+        port=$(netstat -tulpn 2>/dev/null | grep supernode | grep udp | awk '{print $4}' | cut -d: -f2)
+        local ip_addr
+        ip_addr=$(hostname -I # 检查命令是否存在
 check_command() {
     if ! command -v "$1" &> /dev/null; then
         log_error "命令 $1 未找到，请先安装"
