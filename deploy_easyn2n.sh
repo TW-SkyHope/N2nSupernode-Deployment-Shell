@@ -57,7 +57,7 @@ compile_n2n() {
     # 下载并编译源码
     sudo wget "${BASE_URL}/ntop/n2n/archive/refs/tags/3.1.1.tar.gz" -O n2n.tar.gz
     sudo tar xzvf n2n.tar.gz
-    cd n2n-3.1.1 || exit
+    cd n2n-3.0 || exit
     sudo ./autogen.sh
     sudo ./configure
     sudo make && sudo make install
