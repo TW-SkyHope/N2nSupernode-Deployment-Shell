@@ -1,173 +1,97 @@
 #!/bin/bash
 
+# 询问节点是否在中国大陆
+read -p "节点是否在中国大陆？(y/n): " in_china
+
+# 设置下载源
+if [[ "$in_china" =~ ^[Yy]$ ]]; then
+    github_prefix="https://mirror.ghproxy.com/https://github.com"
+else
+    github_prefix="https://github.com"
+fi
+
 # 检测操作系统类型
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS=$ID
+if [ -f /etc/redhat-release ]; then
+    os_type="rhel"
+elif [ -f /etc/lsb-release ]; then
+    os_type="ubuntu"
 else
-    echo "无法确定操作系统类型"
+    echo "无法识别的操作系统"
     exit 1
 fi
 
-# 询问是否在中国大陆
-read -p "节点是否在中国大陆？(y/n): " IN_CHINA
-IN_CHINA=$(echo "$IN_CHINA" | tr '[:upper:]' '[:lower:]')
-
-# 设置下载基础URL
-if [[ "$IN_CHINA" == "y" || "$IN_CHINA" == "yes" ]]; then
-    BASE_URL="https://gh.api.99988866.xyz/https://github.com"
+# 安装n2n软件包
+if [ "$os_type" == "ubuntu" ]; then
+    wget "${github_prefix}/ntop/n2n/releases/download/3.1.1/n2n_3.1.1_amd64.deb" -O n2n.deb
+    sudo dpkg -i n2n.deb
+    rm n2n.deb
+    pkg_manager="apt-get"
 else
-    BASE_URL="https://github.com"
+    wget "${github_prefix}/ntop/n2n/releases/download/3.1.1/n2n-3.1.1-1.x86_64.rpm" -O n2n.rpm
+    sudo rpm -ivh n2n.rpm
+    rm n2n.rpm
+    pkg_manager="yum"
 fi
 
-# 安装n2n二进制包
-install_n2n() {
-    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
-        PKG_NAME="n2n_3.1.1_amd64.deb"
-        DOWNLOAD_URL="$BASE_URL/ntop/n2n/releases/download/3.1.1/$PKG_NAME"
-        wget "$DOWNLOAD_URL"
-        sudo dpkg -i "$PKG_NAME"
-        rm -f "$PKG_NAME"
-    elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
-        PKG_NAME="n2n-3.1.1-1.x86_64.rpm"
-        DOWNLOAD_URL="$BASE_URL/ntop/n2n/releases/download/3.1.1/$PKG_NAME"
-        wget "$DOWNLOAD_URL"
-        sudo rpm -ivh "$PKG_NAME"
-        rm -f "$PKG_NAME"
-    else
-        echo "不支持的操作系统: $OS"
-        exit 1
-    fi
-}
-
-# 安装编译依赖
-install_dependencies() {
-    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
-        sudo apt-get update
-        sudo apt-get install autoconf make gcc -y
-    elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
-        sudo yum install autoconf make gcc -y
-    fi
-}
-
-# 主程序
-main() {
-    # 安装n2n
-    install_n2n
-    
-    # 安装依赖
-    install_dependencies
-    
-    # 设置目录
-    read -p "请输入EasyN2N服务端目录 (默认: /opt): " SERVER_DIR
-    SERVER_DIR=${SERVER_DIR:-/opt}
-    
-    # 创建目录并进入
-    sudo mkdir -p "$SERVER_DIR"
-    cd "$SERVER_DIR" || exit
-    
-    # 下载并编译源码
-    SOURCE_URL="$BASE_URL/ntop/n2n/archive/refs/tags/3.0.tar.gz"
-    sudo wget "$SOURCE_URL"
-    sudo tar xzvf 3.0.tar.gz
-    cd n2n-3.0 || exit
-    
-    sudo ./autogen.sh
-    sudo ./configure
-    sudo make && sudo make install
-    
-    # 设置端口
-    read -p "请输入运行端口: " PORT
-    
-    # 配置防火墙
-    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
-        sudo ufw allow "$PORT"/udp
-    elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
-        sudo firewall-cmd --permanent --add-port="$PORT"/udp
-        sudo firewall-cmd --reload
-    fi
-    
-    # 启动服务
-    sudo supernode -p "$PORT" > /dev/null 2>&1 &
-    SUPERNODE_PID=$!
-    
-    # 获取本机IP
-    IP_ADDR=$(hostname -I | awk '{print $1}')
-    
-    # 输出结果
-    echo ""
-    echo "========================================"
-    echo "  EasyN2N 服务端已成功启动！"
-    echo "----------------------------------------"
-    echo "  PID: $SUPERNODE_PID"
-    echo "  监听端口: $PORT/udp"
-    echo "  连接地址: $IP_ADDR:$PORT"
-    echo "========================================"
-    echo ""
-    echo "关闭程序方法:"
-    echo "1. 查找进程: ps -ef | grep supernode"
-    echo "2. 终止进程: sudo kill <PID>"
-    echo ""
-}
-
-# 执行主程序
-main
-    sudo apt-get update
-    sudo apt-get install -y autoconf make gcc
-elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
-    pkg_name="n2n-3.1.1-1.x86_64.rpm"
-    download_url="${proxy}https://github.com/ntop/n2n/releases/download/3.1.1/n2n-3.1.1-1.x86_64.rpm"
-    wget "$download_url" -O "$pkg_name"
-    sudo rpm -ivh "$pkg_name"
-    sudo yum install -y autoconf make gcc
+# 安装编译工具
+if [ "$os_type" == "ubuntu" ]; then
+    sudo $pkg_manager install autoconf make gcc -y
 else
-    echo "不支持的操作系统: $OS"
-    exit 1
+    sudo $pkg_manager install autoconf make gcc -y
 fi
 
-# 下载并编译源码
-src_url="${proxy}https://github.com/ntop/n2n/archive/refs/tags/3.0.tar.gz"
-sudo wget "$src_url" -O "3.0.tar.gz"
-sudo tar xzvf "3.0.tar.gz"
-cd n2n-3.0 || exit 1
+# 设置服务端目录
+read -p "设置easyn2n服务端目录（默认为/opt）: " server_dir
+server_dir=${server_dir:-/opt}
+
+# 创建目录并下载源码
+sudo mkdir -p "$server_dir"
+cd "$server_dir" || exit
+sudo wget "${github_prefix}/ntop/n2n/archive/refs/tags/3.0.tar.gz" -O 3.0.tar.gz
+sudo tar xzvf 3.0.tar.gz
+rm 3.0.tar.gz
+
+# 编译安装
+cd n2n-3.0 || exit
 sudo ./autogen.sh
 sudo ./configure
 sudo make
 sudo make install
 
 # 设置运行端口
-read -p "请输入运行端口（默认7777）: " port
-port=${port:-7777}
+read -p "设置easyn2n运行端口: " port
 
 # 配置防火墙
-if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+if [ "$os_type" == "ubuntu" ]; then
     sudo ufw allow "$port"/udp
     sudo ufw reload
-elif [[ "$OS" == "centos" || "$OS" == "rhel" || "$OS" == "fedora" ]]; then
-    if command -v firewall-cmd &> /dev/null; then
-        sudo firewall-cmd --permanent --add-port="$port"/udp
-        sudo firewall-cmd --reload
-    elif command -v iptables &> /dev/null; then
-        sudo iptables -A INPUT -p udp --dport "$port" -j ACCEPT
-        sudo service iptables save
-    fi
+else
+    sudo firewall-cmd --permanent --add-port="$port"/udp
+    sudo firewall-cmd --reload
 fi
 
 # 启动服务
 sudo supernode -p "$port" > /dev/null 2>&1 &
-sleep 2  # 等待进程启动
+sleep 2
 
 # 获取本机IP
-ip=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
+ip_address=$(hostname -I | awk '{print $1}')
 
-# 显示结果
+# 输出结果
 echo ""
 echo "========================================"
-echo " easyn2n节点部署成功!"
+echo " easyn2n节点部署成功！"
 echo "----------------------------------------"
-echo " 监听端口: UDP/$port"
-echo " 连接地址: $ip:$port"
-echo "----------------------------------------"
-echo " 查看运行状态: ps -ef | grep supernode"
-echo " 关闭节点: sudo kill $(pgrep supernode)"
+echo " 运行状态: 运行中"
+echo " 监听端口: $port/udp"
+echo " 连接地址: ${ip_address}:${port}"
+echo " 日志文件: /var/log/syslog (搜索supernode)"
 echo "========================================"
+echo ""
+echo "关闭程序方法:"
+echo "1. 查找进程ID: ps -ef | grep supernode"
+echo "2. 终止进程: sudo kill <PID>"
+echo "----------------------------------------"
+
+# 清理临时文件
+cd ~ || exit
