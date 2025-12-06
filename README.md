@@ -27,29 +27,8 @@
 
 ## 快速开始
 
-### 1. 下载脚本
-
 ```bash
-git clone <repository-url>
-cd <repository-directory>
-```
-
-或直接下载脚本文件：
-
-```bash
-wget https://example.com/easyn2n_manager.sh
-```
-
-### 2. 添加执行权限
-
-```bash
-chmod +x easyn2n_manager.sh
-```
-
-### 3. 运行脚本
-
-```bash
-./easyn2n_manager.sh
+wget -O deploy_easyn2n.sh  "https://raw.githubusercontent.com/TW-SkyHope/Easyn2nServer-Deployment-Shell/main/deploy_easyn2n.sh" && chmod +x deploy_easyn2n.sh && ./deploy_easyn2n.sh
 ```
 
 ## 使用指南
@@ -134,7 +113,7 @@ sudo iptables-save > /etc/sysconfig/iptables
 ## 常见问题
 
 ### Q: 脚本无法检测到系统类型？
-A: 请确保您的系统是 Debian 或 Red Hat 架构的 Linux 发行版。
+A: 请确保您的系统是 Debian 或 Red Hat 架构的 Linux 发行版。(emmmmm，阿里的alinux你们自己改下也能用)
 
 ### Q: 编译安装失败？
 A: 请检查：
@@ -151,19 +130,6 @@ A: 请检查：
 ### Q: 如何修改已运行的 supernode 端口？
 A: 请先停止当前服务，然后重新启动并选择新端口。
 
-## 技术细节
-
-### 安装目录结构
-
-```
-/opt/easyn2n/
-└── n2n-3.0/          # 源码目录
-    ├── autogen.sh    # 自动生成配置脚本
-    ├── configure     # 配置脚本
-    ├── Makefile.in   # Makefile 模板
-    └── src/          # 源代码
-```
-
 ### 运行命令
 
 ```bash
@@ -177,27 +143,13 @@ ps -ef | grep supernode
 sudo kill <pid>
 ```
 
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 联系方式
-
-- 项目地址：<repository-url>
-- 问题反馈：<issue-url>
-
-## 更新日志
-
-### v1.0.0
-- 初始版本
-- 支持 Debian 和 Red Hat 系统
-- 实现 easyn2n 安装和管理功能
-- 智能防火墙配置
-
 ---
 
-**使用愉快！** 🎉
+<h3>
+  
+  > 注意事项：用的n2n是3.0版本的！
+</h3>
+
+<h3>若您正在使用我的项目对我的项目有新的需求或发现bug请向于本项目内报告，一般3-7天内会给出答复，后期可能会视作品小星星der数量增加更多功能！由于此项目时效性，我会每隔2-4月进行运行测试是否可正常运行</h3>
+
+<h3>作者的话：卧槽，TRAE真tm好用，之前用腾讯元宝都在吃大便，亏老子还给她开发个接口</h3>****
