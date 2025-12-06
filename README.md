@@ -80,50 +80,6 @@ easyn2n节点管理脚本
 
 选择选项 `4` 查看 supernode 运行状态，包括是否正在运行、进程 ID 和监听端口。
 
-## 防火墙配置
-
-脚本会根据系统类型自动配置防火墙：
-
-### Debian 系统（ufw）
-
-```bash
-sudo ufw allow <port>/udp
-```
-
-### Red Hat 系统（firewalld）
-
-```bash
-sudo firewall-cmd --permanent --add-port=<port>/udp
-sudo firewall-cmd --reload
-```
-
-### Red Hat 系统（iptables）
-
-```bash
-sudo iptables -A INPUT -p udp --dport <port> -j ACCEPT
-sudo iptables-save > /etc/sysconfig/iptables
-```
-
-## 常见问题
-
-### Q: 脚本无法检测到系统类型？
-A: 请确保您的系统是 Debian 或 Red Hat 架构的 Linux 发行版。(emmmmm，阿里的alinux你们自己改下也能用)
-
-### Q: 编译安装失败？
-A: 请检查：
-- 网络连接是否正常
-- 是否具有足够的磁盘空间
-- 是否安装了所有必要的依赖
-
-### Q: supernode 无法启动？
-A: 请检查：
-- 端口是否已被占用
-- 防火墙是否正确配置
-- 是否具有 sudo 权限
-
-### Q: 如何修改已运行的 supernode 端口？
-A: 请先停止当前服务，然后重新启动并选择新端口。
-
 ## 运行命令
 
 ```bash
