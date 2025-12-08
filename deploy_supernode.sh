@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# easyn2n节点管理脚本
+# n2n节点管理脚本
 # 适配Debian和Red Hat Enterprise Linux架构
 
 echo "========================================"
-echo "easyn2n节点管理脚本"
+echo "n2n节点管理脚本"
 echo "========================================"
 
 # 检测系统类型
@@ -33,18 +33,18 @@ install_dependencies() {
     fi
 }
 
-# 安装easyn2n
-install_easyn2n() {
+# 安装n2n节点
+install_n2n() {
     # 选择安装目录
-    read -p "请输入安装目录 [默认: /opt/easyn2n]: " INSTALL_DIR
-    INSTALL_DIR=${INSTALL_DIR:-/opt/easyn2n}
+    read -p "请输入安装目录 [默认: /opt/n2n]: " INSTALL_DIR
+    INSTALL_DIR=${INSTALL_DIR:-/opt/n2n}
     
     # 创建安装目录
     sudo mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR" || exit 1
     
     # 下载并编译安装
-    echo "正在下载easyn2n源码..."
+    echo "正在下载n2n源码..."
     wget https://github.com/ntop/n2n/archive/refs/tags/3.0.tar.gz
     
     echo "正在解压源码..."
@@ -61,7 +61,7 @@ install_easyn2n() {
     cd "$INSTALL_DIR" || exit 1
     rm -f 3.0.tar.gz
     
-    echo "easyn2n安装完成！"
+    echo "n2n supernode安装完成！"
 }
 
 # 启动supernode
@@ -138,7 +138,7 @@ status_supernode() {
 show_menu() {
     echo ""
     echo "请选择操作："
-    echo "1. 安装easyn2n"
+    echo "1. 安装n2n supernode"
     echo "2. 启动supernode"
     echo "3. 停止supernode"
     echo "4. 查看supernode状态"
@@ -156,7 +156,7 @@ while true; do
     case $CHOICE in
         1)
             install_dependencies
-            install_easyn2n
+            install_n2n
             ;;
         2)
             start_supernode
